@@ -131,6 +131,23 @@ export function SignSequence({ signs, language, originalText }: Props) {
               className="size-full object-contain"
               onEnded={advance}
             />
+          ) : current?.available && current.thumbnail_url ? (
+            <img
+              key={current.thumbnail_url}
+              src={current.thumbnail_url}
+              alt={current.kind === "letter" ? `Fingerspelled letter ${current.gloss}` : `Sign for ${current.gloss}`}
+              className="size-full object-contain"
+            />
+          ) : current?.kind === "unavailable" ? (
+            <div className="px-6 text-center">
+              <span className="mx-auto grid size-14 place-items-center rounded-full bg-primary/10 text-primary">
+                <Hand className="size-7" aria-hidden="true" />
+              </span>
+              <p className="mt-3 font-display text-2xl font-bold">{current.gloss}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Sign unavailable — no sign or fingerspelling exists for this word yet
+              </p>
+            </div>
           ) : (
             <div className="px-6 text-center">
               <span className="mx-auto grid size-14 place-items-center rounded-full bg-primary/10 text-primary">
@@ -138,7 +155,9 @@ export function SignSequence({ signs, language, originalText }: Props) {
               </span>
               <p className="mt-3 font-display text-2xl font-bold">{current?.gloss}</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Video not added yet — the sign name is shown instead
+                {current?.kind === "letter"
+                  ? `Fingerspelling "${current.english ?? ""}" — letter ${current.gloss}`
+                  : "Video not added yet — the sign name is shown instead"}
               </p>
             </div>
           )}
@@ -269,7 +288,13 @@ export function SignSequence({ signs, language, originalText }: Props) {
               </span>
               <span className="text-sm font-bold">{sign.gloss}</span>
               <span className="text-[11px] text-muted-foreground">
-                {sign.available ? "video ready" : "name only"}
+                {sign.kind === "unavailable"
+                  ? "unavailable"
+                  : sign.available
+                    ? sign.video_url
+                      ? "video ready"
+                      : "image"
+                    : "name only"}
               </span>
             </button>
           </li>

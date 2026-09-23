@@ -23,24 +23,11 @@ export function isDevanagari(word: string): boolean {
   return DEVANAGARI.test(word);
 }
 
-/** Words carrying no lexical content in ISL (articles, copulas, particles). */
-const EN_FILLERS = new Set([
-  "a", "an", "the", "is", "am", "are", "was", "were", "be", "been", "being",
-  "do", "does", "did", "of", "to", "for", "at", "on", "in", "into", "by",
-  "with", "that", "this", "these", "those", "there", "it", "its", "as",
-  "and", "or", "so", "just", "very", "really", "kindly", "shall", "will",
-  "would", "can", "could", "may", "might", "must", "should", "has", "have",
-  "had", "please" /* handled separately: PLEASE is a real ISL sign */,
-]);
-
-// PLEASE is a genuine ISL sign, so keep it even though it is a politeness word.
-EN_FILLERS.delete("please");
-
-const HI_FILLERS = new Set([
-  "है", "हैं", "था", "थी", "थे", "हूँ", "हूं", "को", "का", "की", "के",
-  "से", "में", "पर", "और", "एक", "यह", "वह", "ही", "भी", "तो", "कि",
-  "गया", "गयी", "गए", "रहा", "रही", "रहे", "हो", "होगा", "होगी",
-]);
+/**
+ * Filler words (articles, copulas, particles) are deliberately KEPT: every
+ * input word must end up as a sign, a fingerspelled word, or a clearly
+ * labelled "sign unavailable" card — never silently dropped.
+ */
 
 const QUESTION_WORDS = new Set([
   "WHAT", "WHERE", "WHEN", "WHO", "WHY", "HOW", "WHICH",
@@ -88,6 +75,7 @@ export interface TokenisedInput {
 }
 
 export function tokenise(text: string, language: LanguageCode): TokenisedInput {
+  void language; // kept for API stability; filler words are no longer removed
   const normalized = normalizeText(text);
   const isQuestion = /[?？]/.test(normalized);
   const rawTokens = normalized
@@ -95,7 +83,6 @@ export function tokenise(text: string, language: LanguageCode): TokenisedInput {
     .split(/\s+/)
     .filter(Boolean);
 
-  const fillers = language === "hi" ? HI_FILLERS : EN_FILLERS;
   const tokens: string[] = [];
   const removed: string[] = [];
   let isNegated = false;
@@ -103,11 +90,8 @@ export function tokenise(text: string, language: LanguageCode): TokenisedInput {
   for (const raw of rawTokens) {
     const lower = raw.toLowerCase();
     if (lower === "not" || lower === "don't" || lower === "dont" || raw === "नहीं" || raw === "मत") {
+      // Negation is carried by the NO sign appended at the end of the sequence.
       isNegated = true;
-      continue;
-    }
-    if (fillers.has(lower) || fillers.has(raw)) {
-      removed.push(raw);
       continue;
     }
     tokens.push(raw);
@@ -145,21 +129,22 @@ export function buildCandidates(tokens: string[], language: LanguageCode): Gloss
 }
 
 /**
- * Reorders a gloss list toward ISL structure:
- * time markers first, question words last, negation last.
+ * Reorders a list of word-level entries toward ISL structure:
+ * time markers first, question words last. Generic so callers keep their own
+ * entry objects; every entry exposes a `gloss` string. Negation (a "NO" entry)
+ * is appended by the caller after reordering.
  */
 const TIME_GLOSSES = new Set([
   "MORNING", "EVENING", "NIGHT", "TODAY", "TOMORROW", "YESTERDAY", "NOW", "TIME", "LATE",
 ]);
 
-export function applyIslOrdering(
-  glosses: string[],
+export function applyIslOrdering<T extends { gloss: string }>(
+  entries: T[],
   opts: { isQuestion: boolean; isNegated: boolean },
-): string[] {
-  const time = glosses.filter((g) => TIME_GLOSSES.has(g));
-  const questions = glosses.filter((g) => QUESTION_WORDS.has(g));
-  const rest = glosses.filter((g) => !TIME_GLOSSES.has(g) && !QUESTION_WORDS.has(g));
-  const ordered = [...time, ...rest, ...questions];
-  if (opts.isNegated) ordered.push("NO");
-  return ordered;
+): T[] {
+  void opts;
+  const time = entries.filter((e) => TIME_GLOSSES.has(e.gloss));
+  const questions = entries.filter((e) => QUESTION_WORDS.has(e.gloss));
+  const rest = entries.filter((e) => !TIME_GLOSSES.has(e.gloss) && !QUESTION_WORDS.has(e.gloss));
+  return [...time, ...rest, ...questions];
 }

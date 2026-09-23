@@ -11,6 +11,8 @@ export interface SignAsset {
   thumbnail_url: string | null;
   duration: number | null;
   available: boolean;
+  /** "word" = dictionary sign, "letter" = one fingerspelled letter, "unavailable" = no sign form at all. */
+  kind?: "word" | "letter" | "unavailable";
 }
 
 export interface TranslationResponse {
