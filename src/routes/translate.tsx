@@ -438,10 +438,11 @@ function TranslatePage() {
                       <Info className="size-4" aria-hidden="true" />
                       <AlertTitle>No sign available yet</AlertTitle>
                       <AlertDescription>
-                        These words aren't in the dictionary, so they were left out of the
-                        sequence:{" "}
-                        <strong>{result.unmatched_words.join(", ")}</strong>. An
-                        administrator can add them to the sign dictionary.
+                        These words have no dictionary sign and can't be fingerspelled,
+                        so they show as clearly labelled "sign unavailable" cards:{" "}
+                        <strong>{result.unmatched_words.join(", ")}</strong>. Every other
+                        word not in the dictionary is automatically fingerspelled letter
+                        by letter. An administrator can add more signs.
                       </AlertDescription>
                     </Alert>
                   ) : null}

@@ -63,43 +63,117 @@ export const Route = createFileRoute("/api/translate/text")({
           }
         }
 
-        const glosses: string[] = [];
-        const unmatched: string[] = [];
+        /** One input word mapped to its gloss, before sign expansion. */
+        interface WordEntry {
+          word: string;
+          gloss: string;
+          fromDictionary: boolean;
+          /** Whether this word can be fingerspelled letter by letter (Latin letters only). */
+          spellable: boolean;
+        }
+
+        const entries: WordEntry[] = [];
         for (const c of candidates) {
           if (c.literals?.length) {
-            glosses.push(...c.literals);
+            // Digits: ONE TWO THREE — word-level, not fingerspelled.
+            for (const literal of c.literals) {
+              entries.push({ word: literal, gloss: literal, fromDictionary: false, spellable: false });
+            }
             continue;
           }
           const hit = c.keys.map((k) => index.get(k.toLowerCase())).find(Boolean);
-          if (hit) glosses.push(hit);
-          else unmatched.push(c.token);
+          if (hit) {
+            entries.push({ word: c.token, gloss: hit, fromDictionary: true, spellable: false });
+          } else {
+            entries.push({
+              word: c.token,
+              gloss: c.token.toUpperCase(),
+              fromDictionary: false,
+              spellable: /^[A-Za-z]+$/.test(c.token),
+            });
+          }
         }
 
-        const ordered = applyIslOrdering(glosses, { isQuestion, isNegated });
+        const ordered = applyIslOrdering(entries, { isQuestion, isNegated });
+        if (isNegated) {
+          ordered.push({ word: "not", gloss: "NO", fromDictionary: false, spellable: false });
+        }
 
-        const uniqueGlosses = Array.from(new Set(ordered));
-        const { data: signRows } = uniqueGlosses.length
+        // Fetch dictionary sign rows plus every letter row needed for fingerspelling.
+        const neededGlosses = new Set<string>(ordered.map((e) => e.gloss));
+        const neededLetters = new Set<string>();
+        for (const e of ordered) {
+          if (!e.fromDictionary && e.spellable) {
+            for (const ch of e.word.toUpperCase()) neededLetters.add(ch);
+          }
+        }
+        const lookup = [...neededGlosses, ...neededLetters];
+        const { data: signRows } = lookup.length
           ? await client
               .from("sign_videos")
               .select("id, gloss, english, hindi, category, video_url, thumbnail_url, duration")
-              .in("gloss", uniqueGlosses)
+              .in("gloss", lookup)
           : { data: [] as never[] };
-
         const signIndex = new Map((signRows ?? []).map((s) => [s.gloss, s]));
-        const signs: SignAsset[] = ordered.map((gloss) => {
-          const row = signIndex.get(gloss);
-          return {
-            id: row?.id ?? null,
-            gloss,
-            english: row?.english ?? null,
-            hindi: row?.hindi ?? null,
-            category: row?.category ?? null,
-            video_url: row?.video_url ?? null,
-            thumbnail_url: row?.thumbnail_url ?? null,
-            duration: row?.duration ?? null,
-            available: Boolean(row?.video_url),
-          };
-        });
+
+        // Expand every word into: dictionary sign -> A-Z fingerspelling -> labelled fallback.
+        const signs: SignAsset[] = [];
+        for (const entry of ordered) {
+          if (entry.fromDictionary) {
+            const row = signIndex.get(entry.gloss);
+            signs.push({
+              id: row?.id ?? null,
+              gloss: entry.gloss,
+              english: row?.english ?? entry.word,
+              hindi: row?.hindi ?? null,
+              category: row?.category ?? null,
+              video_url: row?.video_url ?? null,
+              thumbnail_url: row?.thumbnail_url ?? null,
+              duration: row?.duration ?? null,
+              available: Boolean(row && (row.video_url || row.thumbnail_url)),
+              kind: "word",
+            });
+            continue;
+          }
+          if (entry.spellable) {
+            for (const ch of entry.word.toUpperCase()) {
+              const row = signIndex.get(ch);
+              signs.push({
+                id: row?.id ?? null,
+                gloss: ch,
+                english: entry.word,
+                hindi: null,
+                category: "fingerspelling",
+                video_url: null,
+                thumbnail_url: row?.thumbnail_url ?? null,
+                duration: 0.9,
+                available: Boolean(row?.thumbnail_url),
+                kind: "letter",
+              });
+            }
+            continue;
+          }
+          signs.push({
+            id: null,
+            gloss: entry.gloss,
+            english: entry.word,
+            hindi: null,
+            category: "unavailable",
+            video_url: null,
+            thumbnail_url: null,
+            duration: null,
+            available: false,
+            kind: "unavailable",
+          });
+        }
+
+        const unmatched = Array.from(
+          new Set(
+            signs
+              .filter((s) => s.kind === "unavailable")
+              .map((s) => s.english ?? s.gloss),
+          ),
+        );
 
         const body: TranslationResponse = {
           original_text: parsed.text,
@@ -107,8 +181,8 @@ export const Route = createFileRoute("/api/translate/text")({
           language,
           detected_language: detectLanguage(parsed.text),
           tokens,
-          removed_words: removed,
-          gloss_sequence: ordered,
+          removed_words: [],
+          gloss_sequence: ordered.map((e) => e.gloss),
           unmatched_words: unmatched,
           signs,
         };
